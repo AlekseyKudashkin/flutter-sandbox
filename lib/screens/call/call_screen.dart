@@ -3,7 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class CallScreen extends StatefulWidget {
-  CallScreen({Key? key}) : super(key: key);
+  CallScreen({Key? key, name = "User"});
 
   @override
   _CallScreenState createState() => _CallScreenState();
@@ -99,7 +99,9 @@ class _CallScreenState extends State<CallScreen> {
     });
   }
 
-  void diconnect() {}
+  void diconnect() {
+    Navigator.pop(context);
+  }
 
   Widget getButton(
       {Color backgroundColor = Colors.red,
