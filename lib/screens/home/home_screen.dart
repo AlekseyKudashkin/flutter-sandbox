@@ -11,7 +11,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   TextEditingController inputName = TextEditingController();
 
-  void submit() {}
+  void submit({String? value}) {
+    FocusScope.of(context).unfocus();
+    Navigator.pushNamed(context, '/call', arguments: value);
+  }
 
   Widget _getButton(double relativeWidth) {
     return ElevatedButton(
@@ -29,6 +32,10 @@ class _HomeScreenState extends State<HomeScreen> {
       height: 50,
       width: relativeWidth,
       child: TextField(
+        textInputAction: TextInputAction.go,
+        onSubmitted: (value) {
+          submit(value: value);
+        },
         controller: inputName,
         decoration: InputDecoration(
           hintText: "Enter your name",
