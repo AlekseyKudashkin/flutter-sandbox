@@ -1,17 +1,73 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class CallScreen extends StatefulWidget {
-  CallScreen({Key? key, name = "User"});
+  final Map<String, dynamic> arguments;
+  CallScreen({Key? key, required this.arguments});
 
   @override
   _CallScreenState createState() => _CallScreenState();
 }
 
 class _CallScreenState extends State<CallScreen> {
+  MediaStream? _localStream;
+  final _localRenderer = RTCVideoRenderer();
+  bool _inCalling = false;
+  bool _isTorchOn = false;
+  MediaRecorder? _mediaRecorder;
+  bool get _isRec => _mediaRecorder != null;
+  double? panelHeight;
+
+  List<MediaDeviceInfo>? _mediaDevicesList;
+
   bool micEnabled = true;
   bool camEnabled = true;
+
+  bool _isPanelVisible = true;
+
+  void _makeCall() async {
+    final mediaConstraints = <String, dynamic>{
+      'audio': false,
+      'video': {
+        'mandatory': {
+          'minWidth':
+              '1280', // Provide your own width, height and frame rate here
+          'minHeight': '720',
+          'minFrameRate': '30',
+        },
+        'facingMode': 'user',
+        'optional': [],
+      }
+    };
+
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      _mediaDevicesList = await navigator.mediaDevices.enumerateDevices();
+      _localStream = stream;
+      _localRenderer.srcObject = _localStream;
+    } catch (e) {
+      print(e.toString());
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _inCalling = true;
+    });
+  }
+
+  void _hangUp() async {
+    try {
+      await _localStream?.dispose();
+      _localRenderer.srcObject = null;
+      setState(() {
+        _inCalling = false;
+      });
+    } catch (e) {
+      print(e.toString());
+    }
+  }
 
   @override
   void initState() {
@@ -22,25 +78,32 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        body: Stack(
-          children: <Widget>[
-            Container(
-              color: Colors.green,
-            ),
-            Positioned(
-              top: 20,
-              right: 14,
-              child: Container(
-                height: 181,
-                width: 119,
-                color: Colors.red,
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isPanelVisible = !_isPanelVisible;
+        });
+      },
+      child: SafeArea(
+        child: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Container(
+                color: Colors.green,
               ),
-            ),
-            getHeadPanel(context),
-            getBottomPanel(context),
-          ],
+              Positioned(
+                top: 20,
+                right: 14,
+                child: Container(
+                  height: 181,
+                  width: 119,
+                  color: Colors.red,
+                ),
+              ),
+              getHeadPanel(context),
+              getBottomPanel(context),
+            ],
+          ),
         ),
       ),
     );
@@ -63,10 +126,19 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
+  double getPanelPosition(BuildContext context) {
+    if (_isPanelVisible) {
+      return 0;
+    } else {
+      return -MediaQuery.of(context).size.height / 5.5;
+    }
+  }
+
   Widget getHeadPanel(BuildContext context) {
     return AnimatedPositioned(
-      top: 0,
-      duration: Duration(seconds: 1),
+      top: getPanelPosition(context),
+      curve: Curves.easeOut,
+      duration: Duration(milliseconds: 150),
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -87,19 +159,39 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
-  void micTurner() {
+  void micToggle() {
+    print(widget.arguments["peerConnection"]);
     setState(() {
       micEnabled = !micEnabled;
     });
   }
 
-  void camTurner() {
+  void camToggle() async {
+    if (_localStream == null) throw Exception('Stream is not initialized');
+    final videoTrack = _localStream!
+        .getVideoTracks()
+        .firstWhere((track) => track.kind == 'video');
+    await Helper.switchCamera(videoTrack);
+
     setState(() {
       camEnabled = !camEnabled;
     });
   }
 
-  void diconnect() {
+  Future<void> disconnect() async {
+    RTCDataChannel? _dataChannel = widget.arguments["dataChannel"];
+    RTCPeerConnection? _peerConnection = widget.arguments["peerConnection"];
+
+    try {
+      await _dataChannel?.close();
+      await _peerConnection?.close();
+      _peerConnection = null;
+    } catch (e) {
+      print(e.toString());
+    }
+    setState(() {
+      _inCalling = false;
+    });
     Navigator.pop(context);
   }
 
@@ -129,7 +221,7 @@ class _CallScreenState extends State<CallScreen> {
           ? Color.fromRGBO(108, 108, 108, 1)
           : Color.fromRGBO(217, 217, 217, 1),
       asset: (camEnabled) ? 'assets/video-on.svg' : 'assets/video-off.svg',
-      onPressed: camTurner,
+      onPressed: camToggle,
       iconColor: (camEnabled) ? Colors.white : Colors.black,
     ));
 
@@ -139,12 +231,12 @@ class _CallScreenState extends State<CallScreen> {
             ? Color.fromRGBO(108, 108, 108, 1)
             : Color.fromRGBO(217, 217, 217, 1),
         asset: (micEnabled) ? 'assets/mic-on.svg' : 'assets/mic-off.svg',
-        onPressed: micTurner,
+        onPressed: micToggle,
         iconColor: (micEnabled) ? Colors.white : Colors.black,
       ),
     );
 
-    buttons.add(getButton(onPressed: diconnect));
+    buttons.add(getButton(onPressed: disconnect));
     return buttons;
   }
 
@@ -166,8 +258,9 @@ class _CallScreenState extends State<CallScreen> {
 
   Widget getBottomPanel(BuildContext context) {
     return AnimatedPositioned(
-      bottom: 0,
-      duration: Duration(seconds: 1),
+      bottom: getPanelPosition(context),
+      curve: Curves.easeOut,
+      duration: Duration(milliseconds: 150),
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
