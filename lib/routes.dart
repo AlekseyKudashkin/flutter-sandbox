@@ -28,11 +28,10 @@ class MyCustomRoute<T> extends MaterialPageRoute<T> {
 MyCustomRoute<dynamic> onGenerateRoute(RouteSettings settings) {
   switch (settings.name) {
     case '/call':
-      Map<String, dynamic> arguments =
-          settings.arguments as Map<String, dynamic>;
+      String name = settings.arguments as String;
       return MyCustomRoute(
           builder: (context) => CallScreen(
-                arguments: arguments,
+                name: name,
               ),
           settings: settings);
     default:

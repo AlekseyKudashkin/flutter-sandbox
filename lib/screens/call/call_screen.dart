@@ -1,76 +1,54 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
+import 'package:flutter_sandbox/services/connection_service.dart';
+import 'package:flutter_sandbox/services/navigation_service.dart';
+import 'package:flutter_sandbox/store/call/call_store.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class CallScreen extends StatefulWidget {
-  final Map<String, dynamic> arguments;
-  CallScreen({Key? key, required this.arguments});
+  final String name;
+  CallScreen({Key? key, required this.name});
 
   @override
   _CallScreenState createState() => _CallScreenState();
 }
 
 class _CallScreenState extends State<CallScreen> {
-  MediaStream? _localStream;
-  final _localRenderer = RTCVideoRenderer();
-  bool _inCalling = false;
-  bool _isTorchOn = false;
-  MediaRecorder? _mediaRecorder;
-  bool get _isRec => _mediaRecorder != null;
+  final CallStore store = GetIt.I<CallStore>();
+  final ConnectionService connectionService = GetIt.I<ConnectionService>();
+
   double? panelHeight;
-
-  List<MediaDeviceInfo>? _mediaDevicesList;
-
+  List<String> messageList = [];
   bool micEnabled = true;
   bool camEnabled = true;
 
   bool _isPanelVisible = true;
 
-  void _makeCall() async {
-    final mediaConstraints = <String, dynamic>{
-      'audio': false,
-      'video': {
-        'mandatory': {
-          'minWidth':
-              '1280', // Provide your own width, height and frame rate here
-          'minHeight': '720',
-          'minFrameRate': '30',
-        },
-        'facingMode': 'user',
-        'optional': [],
-      }
-    };
-
-    try {
-      var stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-      _mediaDevicesList = await navigator.mediaDevices.enumerateDevices();
-      _localStream = stream;
-      _localRenderer.srcObject = _localStream;
-    } catch (e) {
-      print(e.toString());
-    }
-    if (!mounted) return;
-
-    setState(() {
-      _inCalling = true;
-    });
-  }
-
-  void _hangUp() async {
-    try {
-      await _localStream?.dispose();
-      _localRenderer.srcObject = null;
-      setState(() {
-        _inCalling = false;
-      });
-    } catch (e) {
-      print(e.toString());
-    }
+  @override
+  void dispose() {
+    connectionService.localRender.dispose();
+    connectionService.remoteRender.dispose();
+    connectionService.sdpController.dispose();
+    connectionService.channel.sink.close();
+    super.dispose();
   }
 
   @override
   void initState() {
+    connectionService.webSocketConnect();
+    connectionService.channel.stream.listen((data) {
+      setState(() {
+        print(data);
+        messageList.add(data);
+      });
+    });
+    connectionService.initRenderers();
+    connectionService.createPeerConnections().then((pc) {
+      connectionService.peerConnection = pc;
+    });
     micEnabled = true;
     camEnabled = true;
     super.initState();
@@ -89,16 +67,26 @@ class _CallScreenState extends State<CallScreen> {
           body: Stack(
             children: <Widget>[
               Container(
-                color: Colors.green,
+                child: new RTCVideoView(connectionService.remoteRender),
               ),
-              Positioned(
-                top: 20,
-                right: 14,
-                child: Container(
-                  height: 181,
-                  width: 119,
-                  color: Colors.red,
-                ),
+              Observer(
+                builder: (_) {
+                  return AnimatedPositioned(
+                    top: (store.isConnected) ? 20 : 0,
+                    right: (store.isConnected) ? 14 : 0,
+                    duration: Duration(milliseconds: 150),
+                    child: AnimatedContainer(
+                      child: new RTCVideoView(connectionService.localRender),
+                      height: (store.isConnected)
+                          ? 181
+                          : MediaQuery.of(context).size.height,
+                      width: (store.isConnected)
+                          ? 119
+                          : MediaQuery.of(context).size.width,
+                      duration: Duration(milliseconds: 150),
+                    ),
+                  );
+                },
               ),
               getHeadPanel(context),
               getBottomPanel(context),
@@ -115,7 +103,7 @@ class _CallScreenState extends State<CallScreen> {
       child: Padding(
         padding: const EdgeInsets.only(top: 20.0),
         child: Text(
-          "Parry",
+          (store.isConnected) ? store.opponentName : store.waitingToConnect,
           style: GoogleFonts.roboto(
             color: Colors.white,
             fontWeight: FontWeight.w400,
@@ -160,39 +148,22 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   void micToggle() {
-    print(widget.arguments["peerConnection"]);
+    connectionService.createOffer();
+    store.isConnected = !store.isConnected;
     setState(() {
       micEnabled = !micEnabled;
     });
   }
 
   void camToggle() async {
-    if (_localStream == null) throw Exception('Stream is not initialized');
-    final videoTrack = _localStream!
-        .getVideoTracks()
-        .firstWhere((track) => track.kind == 'video');
-    await Helper.switchCamera(videoTrack);
-
+    print(messageList.length);
     setState(() {
       camEnabled = !camEnabled;
     });
   }
 
   Future<void> disconnect() async {
-    RTCDataChannel? _dataChannel = widget.arguments["dataChannel"];
-    RTCPeerConnection? _peerConnection = widget.arguments["peerConnection"];
-
-    try {
-      await _dataChannel?.close();
-      await _peerConnection?.close();
-      _peerConnection = null;
-    } catch (e) {
-      print(e.toString());
-    }
-    setState(() {
-      _inCalling = false;
-    });
-    Navigator.pop(context);
+    GetIt.I<NavigationService>().pop();
   }
 
   Widget getButton(

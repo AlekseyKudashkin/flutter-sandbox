@@ -1,8 +1,8 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_sandbox/services/navigation_service.dart';
+import 'package:flutter_sandbox/store/home/home_store.dart';
 import 'package:flutter_sandbox/theme.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:get_it/get_it.dart';
 
 class HomeScreen extends StatefulWidget {
   HomeScreen({Key? key}) : super(key: key);
@@ -12,130 +12,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  TextEditingController inputName = TextEditingController();
-  RTCPeerConnection? _peerConnection;
-  bool _inCalling = false;
+  final HomeStore store = GetIt.I<HomeStore>();
 
-  RTCDataChannelInit? _dataChannelDict;
-  RTCDataChannel? _dataChannel;
-
-  String _sdp = '';
-
-  Future<void> submit({String? value}) async {
-    var configuration = <String, dynamic>{
-      'iceServers': [
-        {'url': 'stun:stun.l.google.com:19302'},
-      ]
-    };
-
-    final offerSdpConstraints = <String, dynamic>{
-      'mandatory': {
-        'OfferToReceiveAudio': false,
-        'OfferToReceiveVideo': false,
-      },
-      'optional': [],
-    };
-
-    final loopbackConstraints = <String, dynamic>{
-      'mandatory': {},
-      'optional': [
-        {'DtlsSrtpKeyAgreement': true},
-      ],
-    };
-
-    //if (_peerConnection != null) return;
-
-    try {
-      _peerConnection =
-          await createPeerConnection(configuration, loopbackConstraints);
-
-      _peerConnection!.onSignalingState = _onSignalingState;
-      _peerConnection!.onIceGatheringState = _onIceGatheringState;
-      _peerConnection!.onIceConnectionState = _onIceConnectionState;
-      _peerConnection!.onIceCandidate = _onCandidate;
-      _peerConnection!.onRenegotiationNeeded = _onRenegotiationNeeded;
-
-      _dataChannelDict = RTCDataChannelInit();
-      _dataChannelDict!.id = 1;
-      _dataChannelDict!.ordered = true;
-      _dataChannelDict!.maxRetransmitTime = -1;
-      _dataChannelDict!.maxRetransmits = -1;
-      _dataChannelDict!.protocol = 'sctp';
-      _dataChannelDict!.negotiated = false;
-
-      _dataChannel = await _peerConnection!
-          .createDataChannel('dataChannel', _dataChannelDict!);
-      _peerConnection!.onDataChannel = _onDataChannel;
-
-      var description = await _peerConnection!.createOffer(offerSdpConstraints);
-      print(description.sdp);
-      await _peerConnection!.setLocalDescription(description);
-
-      _sdp = description.sdp ?? '';
-      print("object");
-    } catch (e) {
-      print(e.toString());
-    }
-    // if (!mounted) return;
-
-    setState(() {
-      _inCalling = true;
-    });
-
+  Future<void> submit() async {
     FocusScope.of(context).unfocus();
-    Map<String, dynamic> values = {
-      "name": value,
-      "dataChannel": _dataChannel,
-      "peerConnection": _peerConnection
-    };
-    print("object11");
-    Navigator.pushNamed(context, '/call', arguments: values);
-  }
-
-  void _onDataChannel(RTCDataChannel dataChannel) {
-    dataChannel.onMessage = (message) {
-      if (message.type == MessageType.text) {
-        print(message.text);
-      } else {
-        // do something with message.binary
-      }
-    };
-    // or alternatively:
-    dataChannel.messageStream.listen((message) {
-      if (message.type == MessageType.text) {
-        print(message.text);
-      } else {
-        // do something with message.binary
-      }
-    });
-
-    dataChannel.send(RTCDataChannelMessage('Hello!'));
-    dataChannel.send(RTCDataChannelMessage.fromBinary(Uint8List(5)));
-  }
-
-  void _onSignalingState(RTCSignalingState state) {
-    print(state);
-  }
-
-  void _onIceGatheringState(RTCIceGatheringState state) {
-    print(state);
-  }
-
-  void _onIceConnectionState(RTCIceConnectionState state) {
-    print(state);
-  }
-
-  void _onCandidate(RTCIceCandidate candidate) {
-    print('onCandidate: ${candidate.candidate}');
-    _peerConnection?.addCandidate(candidate);
-    setState(() {
-      _sdp += '\n';
-      _sdp += candidate.candidate ?? '';
-    });
-  }
-
-  void _onRenegotiationNeeded() {
-    print('RenegotiationNeeded');
+    store.nameCheck();
+    GetIt.I<NavigationService>().pushNamed('/call', arguments: store.name);
   }
 
   Widget _getButton(double relativeWidth) {
@@ -155,10 +37,12 @@ class _HomeScreenState extends State<HomeScreen> {
       width: relativeWidth,
       child: TextField(
         textInputAction: TextInputAction.go,
-        onSubmitted: (value) {
-          submit(value: value);
+        onChanged: (String name) {
+          store.name = name;
         },
-        controller: inputName,
+        onSubmitted: (_) {
+          submit();
+        },
         decoration: InputDecoration(
           hintText: "Enter your name",
           focusedBorder: new OutlineInputBorder(
