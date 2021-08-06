@@ -28,9 +28,15 @@ class ConnectionService {
   }
 
   webSocketConnect() async {
-    channel = IOWebSocketChannel.connect(
-      Uri.parse('wss://flutter-sandbox-alekskud13.herokuapp.com/'),
-    );
+    try {
+      channel = IOWebSocketChannel.connect(
+        Uri.parse('wss://flutter-sandbox-alekskud13.herokuapp.com/'),
+      );
+      channel.stream.asBroadcastStream();
+      print("Connected to heroku!");
+    } catch (e) {
+      print("Failed connect to heroku!");
+    }
   }
 
   createPeerConnections() async {
@@ -53,6 +59,21 @@ class ConnectionService {
 
     RTCPeerConnection pc =
         await createPeerConnection(configuration, offerSdpConstraints);
+
+    pc.onSignalingState = (state) {
+      if (state == RTCSignalingState.RTCSignalingStateHaveRemoteOffer) {
+        print("Have remote offer");
+      }
+      if (state == RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+        print("Have local offer");
+      }
+      if (state == RTCSignalingState.RTCSignalingStateHaveLocalPrAnswer) {
+        print("Have local answer");
+      }
+      if (state == RTCSignalingState.RTCSignalingStateHaveRemotePrAnswer) {
+        print("Have remote answer");
+      }
+    };
 
     pc.addStream(localStream!);
 
@@ -82,9 +103,7 @@ class ConnectionService {
     final Map<String, dynamic> mediaConstraints;
     mediaConstraints = {
       'audio': true,
-      'video': {
-        'facingMode': 'user',
-      },
+      'video': {'facingMode': 'user', 'optional': []},
     };
 
     MediaStream stream =
@@ -96,18 +115,20 @@ class ConnectionService {
   }
 
   void createOffer() async {
-    RTCSessionDescription description =
-        await peerConnection!.createOffer({'offerToReceiveVideo': 1});
+    RTCSessionDescription description = await peerConnection!.createOffer({
+      'offerToReceiveVideo': 1,
+    });
     var session = parse(description.sdp.toString());
-    //print(json.encode(session));
+    print(json.encode(session));
     _offer = true;
 
     peerConnection!.setLocalDescription(description);
-
-    channel.sink.add(json.encode(session));
+    print(description.sdp);
+    channel.sink.add("Offer");
+    channel.sink.add(description.sdp);
   }
 
-  void _createAnswer() async {
+  void createAnswer() async {
     RTCSessionDescription description =
         await peerConnection!.createAnswer({'offerToReceiveVideo': 1});
 
@@ -115,23 +136,27 @@ class ConnectionService {
     //print(json.encode(session));
 
     peerConnection!.setLocalDescription(description);
-    channel.sink.add(description);
+
+    channel.sink.add("Answer: " + json.encode(session));
   }
 
-  void _setRemoteDescription() async {
-    String jsonString = sdpController.text;
+  void sinkData(String data, String id) {
+    channel.sink.add('Id: $id $data');
+  }
+
+  void setRemoteDescription(String jsonString) async {
     dynamic session = await jsonDecode('$jsonString');
 
     String sdp = write(session, null);
 
     RTCSessionDescription description =
         new RTCSessionDescription(sdp, _offer ? 'answer' : 'offer');
-    //print(description.toMap());
+    print(description.toMap());
 
     await peerConnection!.setRemoteDescription(description);
   }
 
-  void _addCandidate() async {
+  void addCandidate() async {
     String jsonString = sdpController.text;
     dynamic session = await jsonDecode('$jsonString');
     //print(session['candidate']);

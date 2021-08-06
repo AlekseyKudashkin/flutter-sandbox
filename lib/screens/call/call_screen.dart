@@ -27,28 +27,47 @@ class _CallScreenState extends State<CallScreen> {
 
   bool _isPanelVisible = true;
 
+  bool isOffer = false;
+
   @override
   void dispose() {
-    connectionService.localRender.dispose();
-    connectionService.remoteRender.dispose();
-    connectionService.sdpController.dispose();
-    connectionService.channel.sink.close();
+    //connectionService.localRender.dispose();
+    // connectionService.remoteRender.dispose();
+    // connectionService.sdpController.dispose();
+    // connectionService.channel.sink.close();
     super.dispose();
   }
 
-  @override
-  void initState() {
+  void startCall() {
     connectionService.webSocketConnect();
     connectionService.channel.stream.listen((data) {
-      setState(() {
-        print(data);
-        messageList.add(data);
-      });
+      print(data);
+      if (data == "Offer") {
+        isOffer = true;
+        return;
+      }
+      if (isOffer == true) {
+        connectionService.setRemoteDescription(data);
+        connectionService.createAnswer();
+        isOffer = false;
+        return;
+      }
+      connectionService.createOffer();
     });
     connectionService.initRenderers();
     connectionService.createPeerConnections().then((pc) {
       connectionService.peerConnection = pc;
     });
+  }
+
+  @override
+  void initState() {
+    startCall();
+    connectionService.initRenderers();
+    connectionService.createPeerConnections().then((pc) {
+      connectionService.peerConnection = pc;
+    });
+
     micEnabled = true;
     camEnabled = true;
     super.initState();
