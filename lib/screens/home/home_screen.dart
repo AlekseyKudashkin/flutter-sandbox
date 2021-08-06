@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_sandbox/services/navigation_service.dart';
+import 'package:flutter_sandbox/store/home/home_store.dart';
 import 'package:flutter_sandbox/theme.dart';
+import 'package:get_it/get_it.dart';
 
 class HomeScreen extends StatefulWidget {
   HomeScreen({Key? key}) : super(key: key);
@@ -9,11 +12,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  TextEditingController inputName = TextEditingController();
+  final HomeStore store = GetIt.I<HomeStore>();
 
-  void submit({String? value}) {
+  Future<void> submit() async {
     FocusScope.of(context).unfocus();
-    Navigator.pushNamed(context, '/call', arguments: value);
+    store.nameCheck();
+    GetIt.I<NavigationService>().pushNamed('/call', arguments: store.name);
   }
 
   Widget _getButton(double relativeWidth) {
@@ -33,10 +37,12 @@ class _HomeScreenState extends State<HomeScreen> {
       width: relativeWidth,
       child: TextField(
         textInputAction: TextInputAction.go,
-        onSubmitted: (value) {
-          submit(value: value);
+        onChanged: (String name) {
+          store.name = name;
         },
-        controller: inputName,
+        onSubmitted: (_) {
+          submit();
+        },
         decoration: InputDecoration(
           hintText: "Enter your name",
           focusedBorder: new OutlineInputBorder(

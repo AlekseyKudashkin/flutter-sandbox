@@ -1,20 +1,73 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
+import 'package:flutter_sandbox/services/connection_service.dart';
+import 'package:flutter_sandbox/services/navigation_service.dart';
+import 'package:flutter_sandbox/store/call/call_store.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:get_it/get_it.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class CallScreen extends StatefulWidget {
-  CallScreen({Key? key, name = "User"});
+  final String name;
+  CallScreen({Key? key, required this.name});
 
   @override
   _CallScreenState createState() => _CallScreenState();
 }
 
 class _CallScreenState extends State<CallScreen> {
+  final CallStore store = GetIt.I<CallStore>();
+  final ConnectionService connectionService = GetIt.I<ConnectionService>();
+
+  double? panelHeight;
+  List<String> messageList = [];
   bool micEnabled = true;
   bool camEnabled = true;
 
+  bool _isPanelVisible = true;
+
+  bool isOffer = false;
+
+  @override
+  void dispose() {
+    //connectionService.localRender.dispose();
+    // connectionService.remoteRender.dispose();
+    // connectionService.sdpController.dispose();
+    // connectionService.channel.sink.close();
+    super.dispose();
+  }
+
+  void startCall() {
+    connectionService.webSocketConnect();
+    connectionService.channel.stream.listen((data) {
+      print(data);
+      if (data == "Offer") {
+        isOffer = true;
+        return;
+      }
+      if (isOffer == true) {
+        connectionService.setRemoteDescription(data);
+        connectionService.createAnswer();
+        isOffer = false;
+        return;
+      }
+      connectionService.createOffer();
+    });
+    connectionService.initRenderers();
+    connectionService.createPeerConnections().then((pc) {
+      connectionService.peerConnection = pc;
+    });
+  }
+
   @override
   void initState() {
+    startCall();
+    connectionService.initRenderers();
+    connectionService.createPeerConnections().then((pc) {
+      connectionService.peerConnection = pc;
+    });
+
     micEnabled = true;
     camEnabled = true;
     super.initState();
@@ -22,25 +75,42 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        body: Stack(
-          children: <Widget>[
-            Container(
-              color: Colors.green,
-            ),
-            Positioned(
-              top: 20,
-              right: 14,
-              child: Container(
-                height: 181,
-                width: 119,
-                color: Colors.red,
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isPanelVisible = !_isPanelVisible;
+        });
+      },
+      child: SafeArea(
+        child: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Container(
+                child: new RTCVideoView(connectionService.remoteRender),
               ),
-            ),
-            getHeadPanel(context),
-            getBottomPanel(context),
-          ],
+              Observer(
+                builder: (_) {
+                  return AnimatedPositioned(
+                    top: (store.isConnected) ? 20 : 0,
+                    right: (store.isConnected) ? 14 : 0,
+                    duration: Duration(milliseconds: 150),
+                    child: AnimatedContainer(
+                      child: new RTCVideoView(connectionService.localRender),
+                      height: (store.isConnected)
+                          ? 181
+                          : MediaQuery.of(context).size.height,
+                      width: (store.isConnected)
+                          ? 119
+                          : MediaQuery.of(context).size.width,
+                      duration: Duration(milliseconds: 150),
+                    ),
+                  );
+                },
+              ),
+              getHeadPanel(context),
+              getBottomPanel(context),
+            ],
+          ),
         ),
       ),
     );
@@ -52,7 +122,7 @@ class _CallScreenState extends State<CallScreen> {
       child: Padding(
         padding: const EdgeInsets.only(top: 20.0),
         child: Text(
-          "Parry",
+          (store.isConnected) ? store.opponentName : store.waitingToConnect,
           style: GoogleFonts.roboto(
             color: Colors.white,
             fontWeight: FontWeight.w400,
@@ -63,10 +133,19 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
+  double getPanelPosition(BuildContext context) {
+    if (_isPanelVisible) {
+      return 0;
+    } else {
+      return -MediaQuery.of(context).size.height / 5.5;
+    }
+  }
+
   Widget getHeadPanel(BuildContext context) {
     return AnimatedPositioned(
-      top: 0,
-      duration: Duration(seconds: 1),
+      top: getPanelPosition(context),
+      curve: Curves.easeOut,
+      duration: Duration(milliseconds: 150),
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -87,20 +166,23 @@ class _CallScreenState extends State<CallScreen> {
     );
   }
 
-  void micTurner() {
+  void micToggle() {
+    connectionService.createOffer();
+    store.isConnected = !store.isConnected;
     setState(() {
       micEnabled = !micEnabled;
     });
   }
 
-  void camTurner() {
+  void camToggle() async {
+    print(messageList.length);
     setState(() {
       camEnabled = !camEnabled;
     });
   }
 
-  void diconnect() {
-    Navigator.pop(context);
+  Future<void> disconnect() async {
+    GetIt.I<NavigationService>().pop();
   }
 
   Widget getButton(
@@ -129,7 +211,7 @@ class _CallScreenState extends State<CallScreen> {
           ? Color.fromRGBO(108, 108, 108, 1)
           : Color.fromRGBO(217, 217, 217, 1),
       asset: (camEnabled) ? 'assets/video-on.svg' : 'assets/video-off.svg',
-      onPressed: camTurner,
+      onPressed: camToggle,
       iconColor: (camEnabled) ? Colors.white : Colors.black,
     ));
 
@@ -139,12 +221,12 @@ class _CallScreenState extends State<CallScreen> {
             ? Color.fromRGBO(108, 108, 108, 1)
             : Color.fromRGBO(217, 217, 217, 1),
         asset: (micEnabled) ? 'assets/mic-on.svg' : 'assets/mic-off.svg',
-        onPressed: micTurner,
+        onPressed: micToggle,
         iconColor: (micEnabled) ? Colors.white : Colors.black,
       ),
     );
 
-    buttons.add(getButton(onPressed: diconnect));
+    buttons.add(getButton(onPressed: disconnect));
     return buttons;
   }
 
@@ -166,8 +248,9 @@ class _CallScreenState extends State<CallScreen> {
 
   Widget getBottomPanel(BuildContext context) {
     return AnimatedPositioned(
-      bottom: 0,
-      duration: Duration(seconds: 1),
+      bottom: getPanelPosition(context),
+      curve: Curves.easeOut,
+      duration: Duration(milliseconds: 150),
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(

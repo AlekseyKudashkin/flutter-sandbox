@@ -28,8 +28,12 @@ class MyCustomRoute<T> extends MaterialPageRoute<T> {
 MyCustomRoute<dynamic> onGenerateRoute(RouteSettings settings) {
   switch (settings.name) {
     case '/call':
+      String name = settings.arguments as String;
       return MyCustomRoute(
-          builder: (context) => CallScreen(), settings: settings);
+          builder: (context) => CallScreen(
+                name: name,
+              ),
+          settings: settings);
     default:
       return MyCustomRoute(
           builder: (context) => HomeScreen(), settings: settings);
